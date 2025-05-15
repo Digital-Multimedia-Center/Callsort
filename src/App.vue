@@ -30,13 +30,12 @@ async function sortFile() {
     message.value = "Please provide all fields.";
     return;
   }
-
   try {
     const result = await invoke("sort_csv", {
       args: {
-        inputPath: inputPath.value,
-        columnName: columnName.value,
-        outputPath: outputPath.value
+        input_path: inputPath.value,
+        column_name: columnName.value,
+        output_path: outputPath.value
       }
     });
     message.value = result;
