@@ -1,6 +1,9 @@
 use serde::Deserialize;
-use std::fs;
-use csv;
+use std::fs::File;
+use std::io::BufReader;
+
+use once_cell::sync::Lazy;
+use regex::Regex;
 
 #[derive(Deserialize)]
 pub struct SortArgs {
@@ -9,24 +12,29 @@ pub struct SortArgs {
     pub output_path: String,
 }
 
+static RE_ALPHA_NUM: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"([A-Z]+) (\d+)").unwrap()
+});
+
+static RE_DOT_SPACE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(\d) \.").unwrap()
+});
+
+static LOC_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r#"^\s*([A-Z]{1,3})(\d{1,4})\.?(\d{1,3})?\s*\.?([A-Z])(\d+)\s*([A-Z]{1,2})?(\d+)?\s*(\d{4})?(.*)?"#
+    ).unwrap()
+});
+
 fn normalize_call_number(call_number: &str) -> String {
     let mut result = call_number.to_string();
-    result = regex::Regex::new(r"([A-Z]+) (\d+)")
-        .unwrap()
-        .replace_all(&result, "$1$2")
-        .to_string();
-    result = regex::Regex::new(r"(\d) \.")
-        .unwrap()
-        .replace_all(&result, "$1.")
-        .to_string();
+    result = RE_ALPHA_NUM.replace_all(&result, "$1$2").to_string();
+    result = RE_DOT_SPACE.replace_all(&result, "$1.").to_string();
     result.trim().to_string()
 }
 
 fn loc_sort_key(call_number: &str) -> String {
-    let re = regex::Regex::new(
-        r#"^\s*([A-Z]{1,3})(\d{1,4})\.?(\d{1,3})?\s*\.?([A-Z])(\d+)\s*([A-Z]{1,2})?(\d+)?\s*(\d{4})?(.*)?"#
-    ).unwrap();
-    if let Some(caps) = re.captures(call_number) {
+    if let Some(caps) = LOC_RE.captures(call_number) {
         format!(
             "{: <3}{:0>4}{:0>3}{}{:0>5}{}{:0>5}{}{}",
             &caps[1],
@@ -46,9 +54,8 @@ fn loc_sort_key(call_number: &str) -> String {
 
 #[tauri::command]
 fn sort_csv(args: SortArgs) -> Result<String, String> {
-    let contents = fs::read_to_string(&args.input_path).map_err(|e| e.to_string())?;
-
-    let mut reader = csv::Reader::from_reader(contents.as_bytes());
+    let file = File::open(&args.input_path).map_err(|e| e.to_string())?;
+    let mut reader = csv::Reader::from_reader(BufReader::new(file));
     let headers = reader.headers().map_err(|e| e.to_string())?.clone();
 
     let column_index = headers
@@ -56,23 +63,39 @@ fn sort_csv(args: SortArgs) -> Result<String, String> {
         .position(|h| h == args.column_name)
         .ok_or_else(|| format!("Column '{}' not found", args.column_name))?;
 
-    let mut records: Vec<csv::StringRecord> = reader
+    let records: Vec<csv::StringRecord> = reader
         .records()
         .filter_map(Result::ok)
         .collect();
 
-    records.sort_by_cached_key(|record| loc_sort_key(&normalize_call_number(&record[column_index])));
+    let mut keyed_records: Vec<(String, csv::StringRecord)> = records
+        .into_iter()
+        .map(|record| {
+            let call_number = &record[column_index];
+            let normalized = normalize_call_number(call_number);
+            let sort_key = loc_sort_key(&normalized);
+            (sort_key, record)
+        })
+        .collect();
+
+    keyed_records.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let sorted_records: Vec<csv::StringRecord> = keyed_records
+        .into_iter()
+        .map(|(_, record)| record)
+        .collect();
 
     let mut wtr = csv::Writer::from_path(&args.output_path).map_err(|e| e.to_string())?;
     wtr.write_record(&headers).map_err(|e| e.to_string())?;
-    for r in records {
-        wtr.write_record(&r).map_err(|e| e.to_string())?;
+
+    for record in sorted_records {
+        wtr.write_record(&record).map_err(|e| e.to_string())?;
     }
+
     wtr.flush().map_err(|e| e.to_string())?;
 
     Ok(format!("File sorted and saved to: {}", args.output_path))
 }
-
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
