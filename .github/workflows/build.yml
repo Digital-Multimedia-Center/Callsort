@@ -1,116 +1,123 @@
-name: Build and Release Tauri App
+name: Publish Release
 
 on:
   push:
     tags:
-      - 'v*.*.*'  # triggers on version tags like v1.0.0
+      - 'v*'          # trigger on version tags like v1.0.0
+    branches: '*'
+  workflow_dispatch:   # manual trigger available
+
+env:
+  APP_NAME: "CallSort"
 
 jobs:
-  build-macos:
-    name: Build macOS
-    runs-on: macos-latest
-
+  changelog:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --force
-
-      - name: Install NPM dependencies
-        run: npm install
-
-      - name: Build frontend
-        run: npm run build
-
-      - name: Build Tauri macOS bundle
-        run: npm run tauri build
-
-      - name: Upload macOS bundle
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: tauri-macos
-          path: src-tauri/target/release/bundle/macos/*
-
-  build-windows:
-    name: Build Windows
-    runs-on: windows-latest
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --force
-
-      - name: Install NPM dependencies
-        run: npm install
-
-      - name: Build frontend
-        run: npm run build
-
-      - name: Build Tauri Windows bundle
-        run: npm run tauri build
-
-      - name: Upload Windows bundle
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: tauri-windows
-          path: src-tauri/target/release/bundle/windows/*
+      - name: Build changelog
+        id: build_changelog
+        run: |
+          PREV_TAG=$(git tag --list 'v*' | tail -n2 | head -n1)
+          echo "changelog=$(git log $PREV_TAG...${{ github.ref_name }} --pretty=format:'- %s')" >> $GITHUB_OUTPUT
+    outputs:
+      changelog: ${{ steps.build_changelog.outputs.changelog }}
 
   release:
-    name: Create GitHub Release
-    needs: [build-macos, build-windows]
-    runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'  # Arm based macs (M1+)
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest'  # Intel based macs
+            args: '--target x86_64-apple-darwin'
+          - platform: 'ubuntu-latest'
+            args: ''
+          - platform: 'windows-latest'
+            args: ''
+    runs-on: ${{ matrix.platform }}
+    needs: [changelog]
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Download macOS artifact
-        uses: actions/download-artifact@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
         with:
-          name: tauri-macos
-          path: ./artifacts/macos
+          version: 9
 
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          name: tauri-windows
-          path: ./artifacts/windows
+          node-version: 'lts/*'
+          cache: pnpm
 
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
-      - name: Upload macOS bundle to release
-        uses: softprops/action-gh-release@v1
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
         with:
-          files: ./artifacts/macos/*
+          workspaces: './src-tauri -> target'
 
-      - name: Upload Windows bundle to release
-        uses: softprops/action-gh-release@v1
+      - name: Install Ubuntu dependencies
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt update
+          # Adjust this file if you have specific dependencies
+          xargs sudo apt install -y < environment/apt_packages.txt || true
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: CI Build (frontend + backend)
+        if: ${{ github.ref_type == 'branch' }}
+        run: pnpm rls
+
+      - name: Upload Windows artifacts
+        if: ${{ github.ref_type == 'branch' && matrix.platform == 'windows-latest' }}
+        uses: actions/upload-artifact@v4
         with:
-          files: ./artifacts/windows/*
+          name: 'Windows Installers'
+          path: |
+            src-tauri/release/bundle/msi/*.msi
+            src-tauri/release/bundle/nsis/*.exe
+
+      - name: Upload macOS artifact
+        if: ${{ github.ref_type == 'branch' && matrix.platform == 'macos-latest' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'macOS Installer'
+          path: src-tauri/release/bundle/dmg/*.dmg
+
+      - name: Upload Linux artifacts
+        if: ${{ github.ref_type == 'branch' && matrix.platform == 'ubuntu-latest' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'Linux Distributions'
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/AppImage/*.AppImage
+
+      - name: Build Tauri app and publish release
+        uses: tauri-apps/tauri-action@v0
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          CI: true
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "${{ env.APP_NAME }} v__VERSION__"
+          releaseBody: |
+            ${{ needs.changelog.outputs.changelog }}
+            See the assets to download this version and install.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
