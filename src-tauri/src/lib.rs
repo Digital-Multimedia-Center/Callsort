@@ -6,6 +6,39 @@ use std::path::{Path, PathBuf};
 use once_cell::sync::Lazy;
 use regex::Regex;
 
+use calamine::{open_workbook_auto, Reader, Data};
+
+fn read_excel_column(
+    path: &str,
+    _column_name: &str,
+) -> Result<(Vec<String>, Vec<Vec<String>>), String> {
+    let mut workbook = open_workbook_auto(path).map_err(|e| e.to_string())?;
+    let range = workbook
+        .worksheet_range_at(0)
+        .ok_or("No worksheet found")?
+        .map_err(|e| e.to_string())?;
+
+    let mut headers: Vec<String> = Vec::new();
+    let mut data: Vec<Vec<String>> = Vec::new();
+
+    for (i, row) in range.rows().enumerate() {
+        let string_row: Vec<String> = row
+            .iter()
+            .map(|cell| match cell {
+                Data::Empty => "".to_string(),
+                other => other.to_string(),
+            })
+            .collect();
+
+        if i == 0 {
+            headers = string_row;
+        } else {
+            data.push(string_row);
+        }
+    }
+
+    Ok((headers, data))
+}
 
 #[derive(Deserialize)]
 pub struct SortArgs {
@@ -56,25 +89,38 @@ fn loc_sort_key(call_number: &str) -> String {
 
 #[tauri::command]
 fn sort_csv(args: SortArgs) -> Result<String, String> {
-    let file = File::open(&args.input_path).map_err(|e| e.to_string())?;
-    let mut reader = csv::Reader::from_reader(BufReader::new(file));
-    let headers = reader.headers().map_err(|e| e.to_string())?.clone();
+    let extension = Path::new(&args.input_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let (headers, records): (Vec<String>, Vec<Vec<String>>) = match extension.as_str() {
+        "xlsx" | "xls" | "xlsb" => read_excel_column(&args.input_path, &args.column_name)?,
+        "csv" => {
+            let file = File::open(&args.input_path).map_err(|e| e.to_string())?;
+            let mut reader = csv::Reader::from_reader(BufReader::new(file));
+            let headers = reader.headers().map_err(|e| e.to_string())?.clone();
+            let records: Vec<Vec<String>> = reader
+                .records()
+                .filter_map(Result::ok)
+                .map(|r| r.iter().map(|s| s.to_string()).collect())
+                .collect();
+            (headers.iter().map(|s| s.to_string()).collect(), records)
+        }
+        _ => return Err("Unsupported file format".into()),
+    };
 
     let column_index = headers
         .iter()
-        .position(|h| h == args.column_name)
+        .position(|h| h == &args.column_name)
         .ok_or_else(|| format!("Column '{}' not found", args.column_name))?;
 
-    let records: Vec<csv::StringRecord> = reader
-        .records()
-        .filter_map(Result::ok)
-        .collect();
-
-    let mut keyed_records: Vec<(String, csv::StringRecord)> = records
+    let mut keyed_records: Vec<(String, Vec<String>)> = records
         .into_iter()
         .map(|record| {
-            let call_number = &record[column_index];
-            let normalized = normalize_call_number(call_number);
+            let call_number = record.get(column_index).unwrap_or(&"".to_string()).clone();
+            let normalized = normalize_call_number(&call_number);
             let sort_key = loc_sort_key(&normalized);
             (sort_key, record)
         })
@@ -82,7 +128,7 @@ fn sort_csv(args: SortArgs) -> Result<String, String> {
 
     keyed_records.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let sorted_records: Vec<csv::StringRecord> = keyed_records
+    let sorted_records: Vec<Vec<String>> = keyed_records
         .into_iter()
         .map(|(_, record)| record)
         .collect();

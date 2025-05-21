@@ -13,7 +13,7 @@ const isDragging = ref(false);
 async function selectInputFiles() {
   const selected = await open({
     multiple: true,
-    filters: [{ name: "CSV", extensions: ["csv"] }]
+    filters: [{ name: "CSV", extensions: ["csv", "xls", "xlsx", "xlsb"] }]
   });
   if (selected) {
     inputPaths.value = Array.isArray(selected) ? selected : [selected];
@@ -60,8 +60,8 @@ onMounted(async () => {
       isDragging.value = true;
     } else if (event.payload.type === 'drop') {
       const paths = event.payload.paths || [];
-      const csvPaths = paths.filter(p => p.endsWith(".csv"));
-      inputPaths.value = csvPaths;
+      const filePaths = paths.filter(p => p.endsWith(".csv") || p.endsWith(".xlsx") || p.endsWith(".xls") || p.endsWith(".xlsb"));
+      inputPaths.value = filePaths;
       isDragging.value = false;
     } else {
       isDragging.value = false;
