@@ -4,18 +4,20 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from '@tauri-apps/plugin-dialog';
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
-const inputPath = ref("");
+const inputPaths = ref([]);
 const outputPath = ref("");
 const columnName = ref("");
 const message = ref("");
 const isDragging = ref(false);
 
-async function selectInputFile() {
+async function selectInputFiles() {
   const selected = await open({
-    multiple: false,
+    multiple: true,
     filters: [{ name: "CSV", extensions: ["csv"] }]
   });
-  if (selected) inputPath.value = selected;
+  if (selected) {
+    inputPaths.value = Array.isArray(selected) ? selected : [selected];
+  }
 }
 
 async function selectOutputFile() {
@@ -26,37 +28,40 @@ async function selectOutputFile() {
   if (selected) outputPath.value = selected;
 }
 
-async function sortFile() {
-  if (!inputPath.value || !outputPath.value || !columnName.value) {
+async function sortFiles() {
+  if (inputPaths.value.length === 0 || !outputPath.value || !columnName.value) {
     message.value = "Please provide all fields.";
     return;
   }
+
+  message.value = "Sorting files...";
+
   try {
-    const result = await invoke("sort_csv", {
-      args: {
-        input_path: inputPath.value,
-        column_name: columnName.value,
-        output_path: outputPath.value
-      }
-    });
-    message.value = result;
+    for (const path of inputPaths.value) {
+      await invoke("sort_csv", {
+        args: {
+          input_path: path,
+          column_name: columnName.value,
+          output_path: outputPath.value
+        }
+      });
+    }
+    message.value = `Sorted ${inputPaths.value.length} file(s) successfully.`;
   } catch (err) {
     message.value = "Error: " + err;
   }
 }
 
 let unlisten;
-
 onMounted(async () => {
   const webview = await getCurrentWebview();
   unlisten = await webview.onDragDropEvent((event) => {
     if (event.payload.type === 'over') {
       isDragging.value = true;
     } else if (event.payload.type === 'drop') {
-      const paths = event.payload.paths;
-      if (paths.length > 0) {
-        inputPath.value = paths[0];
-      }
+      const paths = event.payload.paths || [];
+      const csvPaths = paths.filter(p => p.endsWith(".csv"));
+      inputPaths.value = csvPaths;
       isDragging.value = false;
     } else {
       isDragging.value = false;
@@ -76,23 +81,24 @@ onBeforeUnmount(() => {
     <div
       class="drop-zone"
       :class="{ dragging: isDragging }"
-      @click="selectInputFile"
+      @click="selectInputFiles"
     >
-      <p v-if="!inputPath">Drag & Drop CSV Here or Click to Select</p>
-      <p v-else>Selected: {{ inputPath }}</p>
+      <p v-if="inputPaths.length === 0">Drag & Drop CSV Files or Click to Select</p>
+      <ul v-else>
+        <li v-for="path in inputPaths" :key="path">{{ path }}</li>
+      </ul>
     </div>
 
-    <button @click="selectOutputFile">Choose Output Path</button>
+    <button @click="selectOutputFile">Choose Output Directory</button>
     <p>{{ outputPath }}</p>
 
     <input v-model="columnName" placeholder="Column name (e.g. CallNumber)" />
 
-    <button @click="sortFile">Sort CSV</button>
+    <button @click="sortFiles">Sort CSVs</button>
 
     <p>{{ message }}</p>
   </main>
 </template>
-
 
 <style scoped>
 .container {
