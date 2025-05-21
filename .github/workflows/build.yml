@@ -1,0 +1,116 @@
+name: Build and Release Tauri App
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # triggers on version tags like v1.0.0
+
+jobs:
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --force
+
+      - name: Install NPM dependencies
+        run: npm install
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build Tauri macOS bundle
+        run: npm run tauri build
+
+      - name: Upload macOS bundle
+        uses: actions/upload-artifact@v3
+        with:
+          name: tauri-macos
+          path: src-tauri/target/release/bundle/macos/*
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --force
+
+      - name: Install NPM dependencies
+        run: npm install
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build Tauri Windows bundle
+        run: npm run tauri build
+
+      - name: Upload Windows bundle
+        uses: actions/upload-artifact@v3
+        with:
+          name: tauri-windows
+          path: src-tauri/target/release/bundle/windows/*
+
+  release:
+    name: Create GitHub Release
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: tauri-macos
+          path: ./artifacts/macos
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: tauri-windows
+          path: ./artifacts/windows
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+
+      - name: Upload macOS bundle to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./artifacts/macos/*
+
+      - name: Upload Windows bundle to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./artifacts/windows/*
