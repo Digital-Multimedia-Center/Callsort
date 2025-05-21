@@ -1,15 +1,8 @@
 name: Publish Release
-name: Publish Release
 
 on:
   push:
     tags:
-      - 'v*'          # trigger on version tags like v1.0.0
-    branches: '*'
-  workflow_dispatch:   # manual trigger available
-
-env:
-  APP_NAME: "CallSort"
       - 'v*'          # trigger on version tags like v1.0.0
     branches: '*'
   workflow_dispatch:   # manual trigger available
