@@ -1,8 +1,15 @@
 name: Publish Release
+name: Publish Release
 
 on:
   push:
     tags:
+      - 'v*'          # trigger on version tags like v1.0.0
+    branches: '*'
+  workflow_dispatch:   # manual trigger available
+
+env:
+  APP_NAME: "CallSort"
       - 'v*'          # trigger on version tags like v1.0.0
     branches: '*'
   workflow_dispatch:   # manual trigger available
@@ -34,8 +41,6 @@ jobs:
             args: '--target aarch64-apple-darwin'
           - platform: 'macos-latest'  # Intel based macs
             args: '--target x86_64-apple-darwin'
-          - platform: 'ubuntu-latest'
-            args: ''
           - platform: 'windows-latest'
             args: ''
     runs-on: ${{ matrix.platform }}
@@ -44,16 +49,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
-          cache: pnpm
+          cache: npm
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -65,19 +65,12 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
-      - name: Install Ubuntu dependencies
-        if: matrix.platform == 'ubuntu-latest'
-        run: |
-          sudo apt update
-          # Adjust this file if you have specific dependencies
-          xargs sudo apt install -y < environment/apt_packages.txt || true
-
       - name: Install frontend dependencies
-        run: pnpm install
+        run: npm install
 
       - name: CI Build (frontend + backend)
         if: ${{ github.ref_type == 'branch' }}
-        run: pnpm rls
+        run: npm run build
 
       - name: Upload Windows artifacts
         if: ${{ github.ref_type == 'branch' && matrix.platform == 'windows-latest' }}
@@ -95,23 +88,12 @@ jobs:
           name: 'macOS Installer'
           path: src-tauri/release/bundle/dmg/*.dmg
 
-      - name: Upload Linux artifacts
-        if: ${{ github.ref_type == 'branch' && matrix.platform == 'ubuntu-latest' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: 'Linux Distributions'
-          path: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/AppImage/*.AppImage
-
       - name: Build Tauri app and publish release
         uses: tauri-apps/tauri-action@v0
         if: ${{ github.ref_type == 'tag' }}
         env:
           CI: true
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "${{ env.APP_NAME }} v__VERSION__"
