@@ -1,9 +1,11 @@
 use serde::Deserialize;
 use std::fs::File;
 use std::io::BufReader;
+use std::path::{Path, PathBuf};
 
 use once_cell::sync::Lazy;
 use regex::Regex;
+
 
 #[derive(Deserialize)]
 pub struct SortArgs {
@@ -85,7 +87,16 @@ fn sort_csv(args: SortArgs) -> Result<String, String> {
         .map(|(_, record)| record)
         .collect();
 
-    let mut wtr = csv::Writer::from_path(&args.output_path).map_err(|e| e.to_string())?;
+    let input_filename = Path::new(&args.input_path)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or("Invalid input file name")?;
+
+    let output_file_name = format!("{}_sorted.csv", input_filename);
+    let mut output_file_path = PathBuf::from(&args.output_path);
+    output_file_path.push(output_file_name);
+
+    let mut wtr = csv::Writer::from_path(&output_file_path).map_err(|e| e.to_string())?;
     wtr.write_record(&headers).map_err(|e| e.to_string())?;
 
     for record in sorted_records {
@@ -94,8 +105,12 @@ fn sort_csv(args: SortArgs) -> Result<String, String> {
 
     wtr.flush().map_err(|e| e.to_string())?;
 
-    Ok(format!("File sorted and saved to: {}", args.output_path))
+    Ok(format!(
+        "File sorted and saved to: {}",
+        output_file_path.display()
+    ))
 }
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

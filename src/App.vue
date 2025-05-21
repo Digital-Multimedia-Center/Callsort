@@ -18,7 +18,7 @@ async function selectInputFile() {
 
 async function selectOutputFile() {
   const selected = await open({
-    directory: false,
+    directory: true,
     multiple: false,
     filters: [{ name: "CSV", extensions: ["csv"] }]
   });
