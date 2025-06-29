@@ -1,9 +1,9 @@
 # Callsort
 
 <p align="center">
-  <img src="https://img.shields.io/github/v/release/Digital-Multimedia-Center/LCC-Sort-Executable?style=flat-square" alt="Latest Release">
-  <img src="https://img.shields.io/github/languages/top/Digital-Multimedia-Center/LCC-Sort-Executable?style=flat-square" alt="Top Language">
-  <img src="https://img.shields.io/github/license/Digital-Multimedia-Center/LCC-Sort-Executable" alt="License">
+  <img src="https://img.shields.io/github/v/release/Digital-Multimedia-Center/Callsort?style=flat-square" alt="Latest Release">
+  <img src="https://img.shields.io/github/languages/top/Digital-Multimedia-Center/Callsort?style=flat-square" alt="Top Language">
+  <img src="https://img.shields.io/github/license/Digital-Multimedia-Center/Callsort" alt="License">
 </p>
 
 **Callsort is a cross-platform desktop application that sorts Excel and CSV files by Library of Congress (LC) Call Numbers with a single click.**
