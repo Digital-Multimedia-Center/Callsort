@@ -8,7 +8,7 @@
 
 **Callsort is a cross-platform desktop application that sorts Excel and CSV files by Library of Congress (LC) Call Numbers with a single click.**
 
-The MSU library manages tens of thousands of items in spreadsheets, but Excel and similar tools cannot sort LC call numbers correctly or handle data inconsistencies. Callsort solves this by parsing, validating, and sorting call numbers accurately, allowing staff and researchers to browse collections in proper order.
+The MSU library manages millions of catalogue items in spreadsheets, but Excel (and similar tools) cannot sort LC call numbers correctly, nor handle data inconsistencies. Callsort solves this by parsing, validating, and sorting call numbers accurately, allowing staff and researchers to browse collections in sorted order.
 
 ---
 
@@ -20,13 +20,23 @@ The MSU library manages tens of thousands of items in spreadsheets, but Excel an
 
 ## Before and After Example
 
-| Unsorted Call Numbers            | Sorted Call Numbers              |
-|----------------------------------|----------------------------------|
-| PN1995.9.W4 O87 2010 VideoDVD, 1 | AE17 .Z4672 2009 DVD-ROM, 1      |
-| HQ792.S6 D34 2010 VideoDVD, 1    | AM7 .R47 2005, 1                 |
-| E40.5 .P68 1996a VideoDVD, 1     | AM7 .W3935 2006, 1               |
-| HV4493 .L54 2004 VideoDVD, 1     | AM57 .B43 2011, 1                |
-| BV4517 .J585 2010 VideoDVD, 1    | AP20 .R3, 1                      |
+<div align="center">
+  <table>
+    <thead>
+      <tr>
+        <th>Unsorted Call Numbers</th>
+        <th>Sorted Call Numbers</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>PN1995.9.W4 O87 2010 VideoDVD, 1</td><td>AE17 .Z4672 2009 DVD-ROM, 1</td></tr>
+      <tr><td>HQ792.S6 D34 2010 VideoDVD, 1</td><td>AM7 .R47 2005, 1</td></tr>
+      <tr><td>E40.5 .P68 1996a VideoDVD, 1</td><td>AM7 .W3935 2006, 1</td></tr>
+      <tr><td>HV4493 .L54 2004 VideoDVD, 1</td><td>AM57 .B43 2011, 1</td></tr>
+      <tr><td>BV4517 .J585 2010 VideoDVD, 1</td><td>AP20 .R3, 1</td></tr>
+    </tbody>
+  </table>
+</div>
 
 > Callsort parses each call number and reorders them precisely in LC call number order, even across messy datasets.
 
