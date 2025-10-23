@@ -26,6 +26,16 @@ fn read_excel_column(
             .iter()
             .map(|cell| match cell {
                 Data::Empty => "".to_string(),
+                Data::String(s) => s.to_string(),
+                Data::Int(i) => i.to_string(),
+                Data::Float(f) => {
+                    // Try to represent without scientific notation if it's effectively an integer
+                    if f.fract() == 0.0 {
+                        format!("{:.0}", f) // no decimals, no scientific notation
+                    } else {
+                        f.to_string()
+                    }
+                }
                 other => other.to_string(),
             })
             .collect();
