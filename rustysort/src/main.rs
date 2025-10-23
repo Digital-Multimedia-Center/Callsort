@@ -9,6 +9,17 @@ use regex::Regex;
 
 use calamine::{open_workbook_auto, Reader, Data};
 
+// TODO: debug with : lldb -- target/debug/rustysort -- test/barcode\ bug/DMC\ DVD-BRD.csv items.effective_call_number .
+
+fn fix_scientific_notation(s: &str) -> String {
+    if s.contains("E+") || s.contains("e+") {
+        if let Ok(num) = s.parse::<f64>() {
+            return format!("{:.0}", num);
+        }
+    }
+    s.to_string()
+}
+
 fn read_excel_column(
     path: &str,
     _column_name: &str,
@@ -115,34 +126,65 @@ fn sort_csv(args: SortArgs) -> Result<String, String> {
         _ => return Err("Unsupported file format".into()),
     };
 
+    println!("\n=== CHECKING records RIGHT AFTER READING ===");
+    for (i, record) in records.iter().enumerate() {
+        if let Some(barcode) = record.get(2) {
+            if barcode.contains("E+") {
+                println!("Record {} has corrupted barcode: {}", i, barcode);
+                println!("  Full record: {:?}", record);
+                if i >= 5 { break; } // Just show first 5
+            }
+        }
+    }
+
     let column_index = headers
         .iter()
         .position(|h| h == &args.column_name)
         .ok_or_else(|| format!("Column '{}' not found", args.column_name))?;
 
-    // Debug point: inspect headers and first few records
-    println!("Headers: {:?}", headers);
-    println!("First few records:");
-    for rec in records.iter().take(5) {
-        println!("{:?}", rec);
+    println!("\n=== BEFORE SORTING ===");
+    println!("records.len() = {}", records.len());
+    if let Some(first) = records.first() {
+        println!("First record barcode (index 2): {:?}", first.get(2));
     }
 
     let mut keyed_records: Vec<(String, Vec<String>)> = records
-        .into_iter()
-        .map(|record| {
-            let call_number = record.get(column_index).unwrap_or(&"".to_string()).clone();
-            let normalized = normalize_call_number(&call_number);
-            let sort_key = loc_sort_key(&normalized);
-            (sort_key, record)
-        })
-        .collect();
+    .into_iter()
+    .map(|record| {
+        let call_number = record.get(column_index).unwrap_or(&"".to_string()).clone();
+        let normalized = normalize_call_number(&call_number);
+        let sort_key = loc_sort_key(&normalized);        
+        (sort_key, record)
+    })
+    .collect();
+
+
+    println!("\n=== AFTER MAPPING, BEFORE SORT ===");
+    if let Some(first) = keyed_records.first() {
+        println!("First keyed_record barcode: {:?}", first.1.get(2));
+    }
 
     keyed_records.sort_by(|a, b| a.0.cmp(&b.0));
+
+    println!("\n=== AFTER SORTING ===");
+    if let Some(first) = keyed_records.first() {
+        println!("First keyed_record barcode after sort: {:?}", first.1.get(2));
+    }
+
+    // Also check a few more records
+    for (i, (key, record)) in keyed_records.iter().take(5).enumerate() {
+        println!("Record {}: sort_key={:?}, barcode={:?}", i, key, record.get(2));
+    }
 
     let sorted_records: Vec<Vec<String>> = keyed_records
         .into_iter()
         .map(|(_, record)| record)
         .collect();
+
+    println!("\n=== AFTER EXTRACTING sorted_records ===");
+    if let Some(first) = sorted_records.first() {
+        println!("First sorted_record barcode: {:?}", first.get(2));
+    }
 
     let input_filename = Path::new(&args.input_path)
         .file_stem()
@@ -153,7 +195,11 @@ fn sort_csv(args: SortArgs) -> Result<String, String> {
     let mut output_file_path = PathBuf::from(&args.output_path);
     output_file_path.push(output_file_name);
 
-    let mut wtr = csv::Writer::from_path(&output_file_path).map_err(|e| e.to_string())?;
+    let mut wtr = csv::WriterBuilder::new()
+    .quote_style(csv::QuoteStyle::Always)
+    .from_path(&output_file_path)
+    .map_err(|e| e.to_string())?;
+
     wtr.write_record(&headers).map_err(|e| e.to_string())?;
 
     for record in sorted_records {
@@ -168,17 +214,12 @@ fn sort_csv(args: SortArgs) -> Result<String, String> {
     ))
 }
 
-fn main() -> Result<(), String> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 4 {
-        eprintln!("Usage: debug_sort <input_path> <column_name> <output_dir>");
-        std::process::exit(1);
-    }
 
+fn main() -> Result<(), String> {
     let sort_args = SortArgs {
-        input_path: args[1].clone(),
-        column_name: args[2].clone(),
-        output_path: args[3].clone(),
+        input_path: "test/barcode bug/DMC DVD-BRD.xlsx".to_string(),
+        column_name: "items.effective_call_number".to_string(),
+        output_path: ".".to_string(),
     };
 
     match sort_csv(sort_args) {
@@ -188,4 +229,3 @@ fn main() -> Result<(), String> {
 
     Ok(())
 }
-
