@@ -11,15 +11,6 @@ use calamine::{open_workbook_auto, Reader, Data};
 
 // TODO: debug with : lldb -- target/debug/rustysort -- test/barcode\ bug/DMC\ DVD-BRD.csv items.effective_call_number .
 
-fn fix_scientific_notation(s: &str) -> String {
-    if s.contains("E+") || s.contains("e+") {
-        if let Ok(num) = s.parse::<f64>() {
-            return format!("{:.0}", num);
-        }
-    }
-    s.to_string()
-}
-
 fn read_excel_column(
     path: &str,
     _column_name: &str,
