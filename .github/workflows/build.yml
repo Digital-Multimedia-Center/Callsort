@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - 'v*'          # trigger on version tags like v1.0.0
-    branches: '*'
+  workflow_dispatch:   # manual trigger available
 
 permissions:
   contents: write
