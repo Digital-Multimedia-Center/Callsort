@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/github/license/Digital-Multimedia-Center/Callsort" alt="License">
 </p>
 
-**Callsort is a cross-platform desktop application that sorts Excel and CSV files by Library of Congress (LC) Call Numbers with a single click.**
+**Callsort is a cross-platform desktop application that sorts Excel and CSV files by Library of Congress (LC) Call Numbers in a single click.**
 
 The MSU library manages millions of catalogue items in spreadsheets, but Excel (and similar tools) cannot sort LC call numbers correctly, nor handle data inconsistencies. Callsort solves this by parsing, validating, and sorting call numbers accurately, allowing staff and researchers to browse collections in sorted order.
 
