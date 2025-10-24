@@ -126,27 +126,11 @@ fn sort_csv(args: SortArgs) -> Result<String, String> {
         _ => return Err("Unsupported file format".into()),
     };
 
-    println!("\n=== CHECKING records RIGHT AFTER READING ===");
-    for (i, record) in records.iter().enumerate() {
-        if let Some(barcode) = record.get(2) {
-            if barcode.contains("E+") {
-                println!("Record {} has corrupted barcode: {}", i, barcode);
-                println!("  Full record: {:?}", record);
-                if i >= 5 { break; } // Just show first 5
-            }
-        }
-    }
-
     let column_index = headers
         .iter()
         .position(|h| h == &args.column_name)
         .ok_or_else(|| format!("Column '{}' not found", args.column_name))?;
 
-    println!("\n=== BEFORE SORTING ===");
-    println!("records.len() = {}", records.len());
-    if let Some(first) = records.first() {
-        println!("First record barcode (index 2): {:?}", first.get(2));
-    }
 
     let mut keyed_records: Vec<(String, Vec<String>)> = records
     .into_iter()
@@ -159,32 +143,13 @@ fn sort_csv(args: SortArgs) -> Result<String, String> {
     .collect();
 
 
-    println!("\n=== AFTER MAPPING, BEFORE SORT ===");
-    if let Some(first) = keyed_records.first() {
-        println!("First keyed_record barcode: {:?}", first.1.get(2));
-    }
-
     keyed_records.sort_by(|a, b| a.0.cmp(&b.0));
 
-    println!("\n=== AFTER SORTING ===");
-    if let Some(first) = keyed_records.first() {
-        println!("First keyed_record barcode after sort: {:?}", first.1.get(2));
-    }
-
-    // Also check a few more records
-    for (i, (key, record)) in keyed_records.iter().take(5).enumerate() {
-        println!("Record {}: sort_key={:?}, barcode={:?}", i, key, record.get(2));
-    }
 
     let sorted_records: Vec<Vec<String>> = keyed_records
         .into_iter()
         .map(|(_, record)| record)
         .collect();
-
-    println!("\n=== AFTER EXTRACTING sorted_records ===");
-    if let Some(first) = sorted_records.first() {
-        println!("First sorted_record barcode: {:?}", first.get(2));
-    }
 
     let input_filename = Path::new(&args.input_path)
         .file_stem()
