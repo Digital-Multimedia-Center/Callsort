@@ -11,25 +11,21 @@ fn read_csv() {
 fn read_xlsx(file: &str) -> Result<(), Error> {
     let path = Path::new(file);
     let mut workbook: Xlsx<_> = open_workbook(path)?;
-    // TODO: implement XLSX reading logic
 
-    let sheet_name = match workbook.sheet_names().first() {
-        Some(name) => name.to_string(),
+    let sheets = workbook.sheet_names().to_owned();
+
+    let sheet_name = match sheets.first() {
+        Some(name) => name.as_str(),
         None => {
             eprintln!("No sheets found in the workbook");
             return Ok(());
         }
     };
 
-    let range = workbook
-        .worksheet_range(&sheet_name)
-        .map_err(|_| Error::Msg("Failed to read worksheet"))?;
+    let range = workbook.worksheet_range(sheet_name)?;
 
     for row in range.rows() {
-        for cell in row {
-            print!("{:?}\t", cell);
-        }
-        println!();
+        println!("row={:?}, row[0]={:?}", row, row.get(0));
     }
 
     Ok(())
