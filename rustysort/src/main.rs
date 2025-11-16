@@ -1,7 +1,7 @@
 use std::env;
 use std::path::Path;
 
-use calamine::{open_workbook, Error, Xlsx, Reader, RangeDeserializerBuilder};
+use calamine::{open_workbook, DataType, Error, Xlsx, Reader, RangeDeserializerBuilder};
 
 // read different types into a common table type
 fn read_csv() {
@@ -24,8 +24,11 @@ fn read_xlsx(file: &str) -> Result<(), Error> {
 
     let range = workbook.worksheet_range(sheet_name)?;
 
-    for row in range.rows() {
-        println!("row={:?}, row[0]={:?}", row, row.get(0));
+    for i in 0..range.width() {
+        for row in range.rows() {
+            println!("{:?}\n", row.get(i));
+            print(row.get(i))
+        }
     }
 
     Ok(())
