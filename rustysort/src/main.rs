@@ -3,12 +3,37 @@ use std::path::Path;
 
 use calamine::{open_workbook, Data, Error, Xlsx, Reader, RangeDeserializerBuilder};
 
+#[derive(Debug, Clone)]
+pub enum Value {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Text(String),
+    DateTime(calamine::ExcelDateTime),
+    Empty,
+    Error(calamine::CellErrorType),
+}
+
+pub fn extract_value(data: &Data) -> Value {
+    match data {
+        Data::Int(n)        => Value::Int(*n),
+        Data::Float(f)      => Value::Float(*f),
+        Data::Bool(b)       => Value::Bool(*b),
+        Data::String(s)     => Value::Text(s.clone()),
+        Data::DateTime(dt)  => Value::DateTime(dt.clone()),
+        Data::DateTimeIso(s)    => Value::Text(s.clone()),      // added
+        Data::DurationIso(s)    => Value::Text(s.clone()),      // added
+        Data::Empty         => Value::Empty,
+        Data::Error(err)    => Value::Error(err.clone())
+    }
+}
+
 // read different types into a common table type
 fn read_csv() {
     // TODO: implement reading CSV
 }
 
-fn read_xlsx(file: &str) -> Result<Vec<Vec<Data>>, Error> {
+fn read_xlsx(file: &str) -> Result<Vec<Vec<Value>>, Error> {
     let path = Path::new(file);
     let mut workbook: Xlsx<_> = open_workbook(path)?;
     let sheets = workbook.sheet_names().to_owned();
@@ -21,11 +46,11 @@ fn read_xlsx(file: &str) -> Result<Vec<Vec<Data>>, Error> {
     };
     let range = workbook.worksheet_range(sheet_name)?;
     
-    let mut columns: Vec<Vec<Data>> = vec![Vec::new(); range.width()];
+    let mut columns: Vec<Vec<Value>> = vec![Vec::new(); range.width()];
     
     for row in range.rows().skip(1) {
         for (i, cell) in row.iter().enumerate() {
-            columns[i].push(cell.clone());
+            columns[i].push(extract_value(cell));
         }
     }
 
@@ -69,7 +94,7 @@ fn main() {
             if !columns.is_empty() {
                 println!("First column:");
                 for cell in &columns[0] {
-                    println!("{}", cell);
+                    println!("{:#?}", cell);
                 }
             } else {
                 println!("No data found in the first column.");
