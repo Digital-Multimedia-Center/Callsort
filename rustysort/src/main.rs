@@ -1,37 +1,35 @@
 use std::env;
 use std::path::Path;
 
-use calamine::{open_workbook, DataType, Error, Xlsx, Reader, RangeDeserializerBuilder};
+use calamine::{open_workbook, Data, Error, Xlsx, Reader, RangeDeserializerBuilder};
 
 // read different types into a common table type
 fn read_csv() {
     // TODO: implement reading CSV
 }
 
-fn read_xlsx(file: &str) -> Result<(), Error> {
+fn read_xlsx(file: &str) -> Result<Vec<Vec<Data>>, Error> {
     let path = Path::new(file);
     let mut workbook: Xlsx<_> = open_workbook(path)?;
-
     let sheets = workbook.sheet_names().to_owned();
-
     let sheet_name = match sheets.first() {
         Some(name) => name.as_str(),
         None => {
             eprintln!("No sheets found in the workbook");
-            return Ok(());
+            return Ok(vec![]);
         }
     };
-
     let range = workbook.worksheet_range(sheet_name)?;
-
-    for i in 0..range.width() {
-        for row in range.rows() {
-            println!("{:?}\n", row.get(i));
-            print(row.get(i))
+    
+    let mut columns: Vec<Vec<Data>> = vec![Vec::new(); range.width()];
+    
+    for row in range.rows().skip(1) {
+        for (i, cell) in row.iter().enumerate() {
+            columns[i].push(cell.clone());
         }
     }
 
-    Ok(())
+    Ok(columns)
 }
 
 // export intermediate table into desired file
@@ -66,9 +64,22 @@ fn main() {
 
     // Example usage (optional)
     if ext == "xlsx" {
-        if let Err(e) = read_xlsx(input_file) {
+    match read_xlsx(input_file) {
+        Ok(columns) => {
+            if !columns.is_empty() {
+                println!("First column:");
+                for cell in &columns[0] {
+                    println!("{}", cell);
+                }
+            } else {
+                println!("No data found in the first column.");
+            }
+        }
+        Err(e) => {
             eprintln!("Error reading XLSX: {}", e);
             std::process::exit(1);
         }
     }
+}
+
 }
