@@ -1,7 +1,9 @@
 use std::env;
 use std::path::Path;
+use std::cmp::Ordering;
 
 use calamine::{open_workbook, Data, Error, Xlsx, Reader, RangeDeserializerBuilder};
+use regex::Regex;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -13,6 +15,20 @@ pub enum Value {
     Empty,
     Error(calamine::CellErrorType),
 }
+
+#[derive(Debug)]
+struct LocKey<'a> {
+    class_letters: &'a str,
+    class_number: i32,
+    decimal_part: i32,
+    cutter1_letter: &'a str,
+    cutter1_number: i32,
+    cutter2_letter: &'a str,
+    cutter2_number: i32,
+    year: i32,
+    trailing: &'a str,
+}
+
 
 pub fn extract_value(data: &Data) -> Value {
     match data {
@@ -27,6 +43,78 @@ pub fn extract_value(data: &Data) -> Value {
         Data::Error(err)    => Value::Error(err.clone())
     }
 }
+
+fn loc_sort_key<'a>(s: &'a str, re: &Regex) -> LocKey<'a> {
+    if let Some(caps) = re.captures(s) {
+        let g = |i| caps.get(i).map(|m| m.as_str()).unwrap_or("");
+
+        LocKey {
+            class_letters: g(1),
+            class_number: g(2).parse().unwrap_or(0),
+            decimal_part: g(3).parse().unwrap_or(-1),
+            cutter1_letter: g(4),
+            cutter1_number: g(5).parse().unwrap_or(0),
+            cutter2_letter: g(6),
+            cutter2_number: g(7).parse().unwrap_or(0),
+            year: g(8).parse().unwrap_or(0),
+            trailing: g(9),
+        }
+    } else {
+        LocKey {
+            class_letters: s,
+            class_number: 0,
+            decimal_part: -1,
+            cutter1_letter: "",
+            cutter1_number: 0,
+            cutter2_letter: "",
+            cutter2_number: 0,
+            year: 0,
+            trailing: "",
+        }
+    }
+}
+
+
+impl<'a> Ord for LocKey<'a> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (
+            self.class_letters,
+            self.class_number,
+            self.decimal_part,
+            self.cutter1_letter,
+            self.cutter1_number,
+            self.cutter2_letter,
+            self.cutter2_number,
+            self.year,
+            self.trailing,
+        )
+            .cmp(&(
+                other.class_letters,
+                other.class_number,
+                other.decimal_part,
+                other.cutter1_letter,
+                other.cutter1_number,
+                other.cutter2_letter,
+                other.cutter2_number,
+                other.year,
+                other.trailing,
+            ))
+    }
+}
+
+impl<'a> PartialOrd for LocKey<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> PartialEq for LocKey<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl<'a> Eq for LocKey<'a> {}
 
 // read different types into a common table type
 fn read_csv() {
@@ -57,31 +145,35 @@ fn read_xlsx(file: &str) -> Result<Vec<Vec<Value>>, Error> {
     Ok(columns)
 }
 
-fn sort_table(mut table: Vec<Vec<Value>>, column: usize) -> Result<Vec<Vec<Value>>, Error> {
-    // convert column-major (Vec<Vec<Value>>) into row-major (Vec<Vec<Value>>)
-    let row_count = table.get(0).map(|c| c.len()).unwrap_or(0);
+fn sort_table(table: Vec<Vec<Value>>, column: usize) -> Result<Vec<Vec<Value>>, Error> {
+    let row_count = table[0].len();
     let col_count = table.len();
 
     let mut rows: Vec<Vec<Value>> = (0..row_count)
-        .map(|r| {
-            (0..col_count)
-                .map(|c| table[c][r].clone())
-                .collect()
-        })
+        .map(|r| (0..col_count).map(|c| table[c][r].clone()).collect())
         .collect();
 
-    // sort rows by the target column
+    let re = Regex::new(
+        r"^\s*([A-Z]{1,3})([0-9]{1,4})\.?([0-9]{1,3})?\s*\.?([A-Z])([0-9]+)\s*(?:([A-Z]{1,2})([0-9]+)?)?\s*([0-9]{4})?(.*)?"
+    ).unwrap();
+
     rows.sort_by(|a, b| {
-        match (&a[column], &b[column]) {
-            (Value::Text(a), Value::Text(b)) => a.cmp(b),
-            (Value::Int(a), Value::Int(b)) => a.cmp(b),
-            (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-            // fallback for mixed types
-            _ => std::cmp::Ordering::Equal,
-        }
+        let sa = match &a[column] {
+            Value::Text(s) => s.as_str(),
+            _ => "",
+        };
+
+        let sb = match &b[column] {
+            Value::Text(s) => s.as_str(),
+            _ => "",
+        };
+
+        let ka = loc_sort_key(sa, &re);
+        let kb = loc_sort_key(sb, &re);
+
+        ka.cmp(&kb)
     });
 
-    // convert back: row-major -> column-major
     let mut sorted_cols = vec![Vec::new(); col_count];
     for row in rows {
         for (c, val) in row.into_iter().enumerate() {
@@ -97,7 +189,6 @@ fn sort_table(mut table: Vec<Vec<Value>>, column: usize) -> Result<Vec<Vec<Value
 fn output_csv() {
     // TODO: implement writing CSV
     
-
 }
 
 fn output_xlsx() {
@@ -131,17 +222,16 @@ fn main() {
         Ok(columns) => {
             if !columns.is_empty() {
                 println!("Column:");
-                for cell in &columns[5] {
+                for cell in &columns[3] {
                     println!("{:#?}", cell);
                 }
                 
                 println!("SORTING COLUMNS");
 
-                let sorted = sort_table(columns, 5).unwrap();
-                for cell in &sorted[5] {
+                let sorted = sort_table(columns, 3).unwrap();
+                for cell in &sorted[3] {
                     println!("{:#?}", cell);
                 }
-
             } else {
                 println!("No data found in the first column.");
             }
