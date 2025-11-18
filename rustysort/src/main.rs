@@ -57,9 +57,47 @@ fn read_xlsx(file: &str) -> Result<Vec<Vec<Value>>, Error> {
     Ok(columns)
 }
 
+fn sort_table(mut table: Vec<Vec<Value>>, column: usize) -> Result<Vec<Vec<Value>>, Error> {
+    // convert column-major (Vec<Vec<Value>>) into row-major (Vec<Vec<Value>>)
+    let row_count = table.get(0).map(|c| c.len()).unwrap_or(0);
+    let col_count = table.len();
+
+    let mut rows: Vec<Vec<Value>> = (0..row_count)
+        .map(|r| {
+            (0..col_count)
+                .map(|c| table[c][r].clone())
+                .collect()
+        })
+        .collect();
+
+    // sort rows by the target column
+    rows.sort_by(|a, b| {
+        match (&a[column], &b[column]) {
+            (Value::Text(a), Value::Text(b)) => a.cmp(b),
+            (Value::Int(a), Value::Int(b)) => a.cmp(b),
+            (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+            // fallback for mixed types
+            _ => std::cmp::Ordering::Equal,
+        }
+    });
+
+    // convert back: row-major -> column-major
+    let mut sorted_cols = vec![Vec::new(); col_count];
+    for row in rows {
+        for (c, val) in row.into_iter().enumerate() {
+            sorted_cols[c].push(val);
+        }
+    }
+
+    Ok(sorted_cols)
+}
+
+
 // export intermediate table into desired file
 fn output_csv() {
     // TODO: implement writing CSV
+    
+
 }
 
 fn output_xlsx() {
@@ -92,10 +130,18 @@ fn main() {
     match read_xlsx(input_file) {
         Ok(columns) => {
             if !columns.is_empty() {
-                println!("First column:");
-                for cell in &columns[0] {
+                println!("Column:");
+                for cell in &columns[5] {
                     println!("{:#?}", cell);
                 }
+                
+                println!("SORTING COLUMNS");
+
+                let sorted = sort_table(columns, 5).unwrap();
+                for cell in &sorted[5] {
+                    println!("{:#?}", cell);
+                }
+
             } else {
                 println!("No data found in the first column.");
             }
