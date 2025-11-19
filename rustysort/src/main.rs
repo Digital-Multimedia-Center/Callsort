@@ -134,30 +134,30 @@ fn read_xlsx(file: &str) -> Result<Vec<Vec<Value>>, Error> {
     };
     let range = workbook.worksheet_range(sheet_name)?;
     
-    let mut columns: Vec<Vec<Value>> = vec![Vec::new(); range.width()];
+    let mut sheet: Vec<Vec<Value>> = Vec::new();
     
     for row in range.rows().skip(1) {
-        for (i, cell) in row.iter().enumerate() {
-            columns[i].push(extract_value(cell));
-        }
+        let row_values: Vec<Value> = row
+            .iter()
+            .map(|cell| extract_value(cell))
+            .collect();
+
+        sheet.push(row_values);
     }
 
-    Ok(columns)
+    Ok(sheet)
 }
 
-fn sort_table(table: Vec<Vec<Value>>, column: usize) -> Result<Vec<Vec<Value>>, Error> {
+    fn sort_table(table: &mut Vec<Vec<Value>>, column: usize) -> Result<(), Error> {
     let row_count = table[0].len();
     let col_count = table.len();
 
-    let mut rows: Vec<Vec<Value>> = (0..row_count)
-        .map(|r| (0..col_count).map(|c| table[c][r].clone()).collect())
-        .collect();
 
     let re = Regex::new(
         r"^\s*([A-Z]{1,3})([0-9]{1,4})\.?([0-9]{1,3})?\s*\.?([A-Z])([0-9]+)\s*(?:([A-Z]{1,2})([0-9]+)?)?\s*([0-9]{4})?(.*)?"
     ).unwrap();
 
-    rows.sort_by(|a, b| {
+    table.sort_by(|a, b| {
         let sa = match &a[column] {
             Value::Text(s) => s.as_str(),
             _ => "",
@@ -174,14 +174,7 @@ fn sort_table(table: Vec<Vec<Value>>, column: usize) -> Result<Vec<Vec<Value>>, 
         ka.cmp(&kb)
     });
 
-    let mut sorted_cols = vec![Vec::new(); col_count];
-    for row in rows {
-        for (c, val) in row.into_iter().enumerate() {
-            sorted_cols[c].push(val);
-        }
-    }
-
-    Ok(sorted_cols)
+    Ok(())
 }
 
 
@@ -216,31 +209,39 @@ fn main() {
         std::process::exit(1);
     }
 
-    // Example usage (optional)
     if ext == "xlsx" {
-    match read_xlsx(input_file) {
-        Ok(columns) => {
-            if !columns.is_empty() {
-                println!("Column:");
-                for cell in &columns[3] {
-                    println!("{:#?}", cell);
-                }
-                
-                println!("SORTING COLUMNS");
+        match read_xlsx(input_file) {
+            Ok(mut rows) => {
+                if !rows.is_empty() {
+                    // Define a column index
+                    let sort_column_index = 12;
+                    let MAX_PRINT = rows.len().min(10);
 
-                let sorted = sort_table(columns, 3).unwrap();
-                for cell in &sorted[3] {
-                    println!("{:#?}", cell);
+                    println!("Column:");
+
+                    // PRINT RAW COLUMN
+                    for row in &rows[0..MAX_PRINT] {
+                        println!("{:#?}", row[sort_column_index]);
+
+                    }
+                    
+                    println!("SORTING COLUMNS");
+
+                    sort_table(&mut rows, sort_column_index).unwrap();
+
+                    // PRINT SORTED COLUMN
+                    for row in &rows[0..MAX_PRINT] {
+                        println!("{:#?}", row[sort_column_index]);
+                    }
+                } else {
+                    println!("No data found in the first column.");
                 }
-            } else {
-                println!("No data found in the first column.");
+            }
+            Err(e) => {
+                eprintln!("Error reading XLSX: {}", e);
+                std::process::exit(1);
             }
         }
-        Err(e) => {
-            eprintln!("Error reading XLSX: {}", e);
-            std::process::exit(1);
-        }
-    }
 }
 
 }
