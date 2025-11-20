@@ -1,8 +1,11 @@
 use std::env;
+use std::fs::File;
 use std::path::Path;
 use std::cmp::Ordering;
 
 use calamine::{open_workbook, Data, Error, Xlsx, Reader, RangeDeserializerBuilder};
+use rust_xlsxwriter::{Workbook, XlsxError};
+use csv::{Writer};
 use regex::Regex;
 
 #[derive(Debug, Clone)]
@@ -121,7 +124,7 @@ fn read_csv() {
     // TODO: implement reading CSV
 }
 
-fn read_xlsx(file: &str) -> Result<Vec<Vec<Value>>, Error> {
+fn read_xlsx(file: &str) -> Result<(Vec<Vec<Value>>, Vec<Value>), Error> {
     let path = Path::new(file);
     let mut workbook: Xlsx<_> = open_workbook(path)?;
     let sheets = workbook.sheet_names().to_owned();
@@ -129,12 +132,18 @@ fn read_xlsx(file: &str) -> Result<Vec<Vec<Value>>, Error> {
         Some(name) => name.as_str(),
         None => {
             eprintln!("No sheets found in the workbook");
-            return Ok(vec![]);
+            return Ok((Vec::new(), Vec::new()));
+
         }
     };
     let range = workbook.worksheet_range(sheet_name)?;
     
     let mut sheet: Vec<Vec<Value>> = Vec::new();
+
+    let headers: Vec<Value> = match range.rows().next() {
+        Some(row) => row.iter().map(|cell| extract_value(cell)).collect(),
+        None => Vec::new(),
+    };
     
     for row in range.rows().skip(1) {
         let row_values: Vec<Value> = row
@@ -145,10 +154,10 @@ fn read_xlsx(file: &str) -> Result<Vec<Vec<Value>>, Error> {
         sheet.push(row_values);
     }
 
-    Ok(sheet)
+    Ok((sheet, headers))
 }
 
-    fn sort_table(table: &mut Vec<Vec<Value>>, column: usize) -> Result<(), Error> {
+fn sort_table(table: &mut Vec<Vec<Value>>, column: usize) -> Result<(), Error> {
     let row_count = table[0].len();
     let col_count = table.len();
 
@@ -179,13 +188,84 @@ fn read_xlsx(file: &str) -> Result<Vec<Vec<Value>>, Error> {
 
 
 // export intermediate table into desired file
-fn output_csv() {
-    // TODO: implement writing CSV
-    
+fn output_csv(table: &Vec<Vec<Value>>, headers: &Vec<Value>, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let file = File::create(path)?;
+    let mut wtr = Writer::from_writer(file);
+
+    let header_row: Vec<String> = headers.iter().map(|v| match v {
+        Value::Int(n) => n.to_string(),
+        Value::Float(f) => f.to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Text(s) => s.clone(),
+        Value::DateTime(dt) => format!("{:?}", dt),
+        Value::Empty => String::new(),
+        Value::Error(e) => format!("{:?}", e),
+    }).collect();
+
+    wtr.write_record(&header_row)?;
+
+    for row in table {
+        let record: Vec<String> = row.iter().map(|v| match v {
+            Value::Int(n) => n.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Text(s) => s.clone(),
+            Value::DateTime(dt) => format!("{:?}", dt),
+            Value::Empty => String::new(),
+            Value::Error(e) => format!("{:?}", e),
+        }).collect();
+
+        wtr.write_record(&record)?;
+    }
+
+    wtr.flush()?;
+    Ok(())
 }
 
-fn output_xlsx() {
-    // TODO: implement writing XLSX
+fn output_xlsx(
+    table: &Vec<Vec<Value>>,
+    headers: &Vec<Value>,
+    path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Create a new workbook
+    let mut workbook = Workbook::new();
+    let worksheet = workbook.add_worksheet();
+
+    // Write headers
+    for (col_idx, header) in headers.iter().enumerate() {
+        let value = match header {
+            Value::Int(n) => n.to_string(),
+            Value::Float(f) => f.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Text(s) => s.clone(),
+            Value::DateTime(dt) => format!("{:?}", dt),
+            Value::Empty => String::new(),
+            Value::Error(e) => format!("{:?}", e),
+        };
+        worksheet.write_string(0, col_idx as u16, &value)?;
+    }
+
+    // Write table rows
+    for (row_idx, row) in table.iter().enumerate() {
+        for (col_idx, cell) in row.iter().enumerate() {
+            let value = match cell {
+                Value::Int(n) => n.to_string(),
+                Value::Float(f) => f.to_string(),
+                Value::Bool(b) => b.to_string(),
+                Value::Text(s) => s.clone(),
+                Value::DateTime(dt) => format!("{:?}", dt),
+                Value::Empty => String::new(),
+                Value::Error(e) => format!("{:?}", e),
+            };
+            // +1 for row_idx because headers occupy row 0
+            worksheet.write_string((row_idx + 1) as u32, col_idx as u16, &value)?;
+        }
+    }
+
+    // Save the workbook
+    workbook.save(path)?;
+
+    Ok(())
 }
 
 fn main() {
@@ -197,7 +277,7 @@ fn main() {
     }
     
     let input_file = &args[1];
-    let _output_folder = &args[2];
+    let output_path = &args[2];
 
     let ext = Path::new(input_file)
         .extension()
@@ -211,10 +291,10 @@ fn main() {
 
     if ext == "xlsx" {
         match read_xlsx(input_file) {
-            Ok(mut rows) => {
+            Ok((mut rows, headers)) => {
                 if !rows.is_empty() {
                     // Define a column index
-                    let sort_column_index = 12;
+                    let sort_column_index = 3;
                     let MAX_PRINT = rows.len().min(10);
 
                     println!("Column:");
@@ -233,6 +313,12 @@ fn main() {
                     for row in &rows[0..MAX_PRINT] {
                         println!("{:#?}", row[sort_column_index]);
                     }
+
+                    if let Err(e) = output_xlsx(&rows, &headers, "output.xlsx") {
+                        eprintln!("Failed to write CSV: {}", e);
+                    } else {
+                        println!("CSV written successfully to {}", output_path);
+                    }
                 } else {
                     println!("No data found in the first column.");
                 }
@@ -242,6 +328,5 @@ fn main() {
                 std::process::exit(1);
             }
         }
-}
-
+    }
 }
