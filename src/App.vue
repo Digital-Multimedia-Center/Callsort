@@ -7,13 +7,14 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 const inputPaths = ref([]);
 const outputPath = ref("");
 const columnName = ref("");
+const outputFormat = ref("csv"); // default output format
 const message = ref("");
 const isDragging = ref(false);
 
 async function selectInputFiles() {
   const selected = await open({
     multiple: true,
-    filters: [{ name: "CSV", extensions: ["csv", "xls", "xlsx", "xlsb"] }]
+    filters: [{ name: "CSV/Excel", extensions: ["csv", "xls", "xlsx", "xlsb"] }]
   });
   if (selected) {
     inputPaths.value = Array.isArray(selected) ? selected : [selected];
@@ -38,11 +39,16 @@ async function sortFiles() {
 
   try {
     for (const path of inputPaths.value) {
-      await invoke("sort_csv", {
+      // Extract filename without extension
+      const fileName = path.split("/").pop().split(".").slice(0, -1).join(".");
+      const outputFile = `${outputPath.value}/${fileName}_sorted.${outputFormat.value}`;
+
+      await invoke("sort_file", {
         args: {
           input_path: path,
           column_name: columnName.value,
-          output_path: outputPath.value
+          output_path: outputFile,
+          output_format: outputFormat.value
         }
       });
     }
@@ -51,6 +57,7 @@ async function sortFiles() {
     message.value = "Error: " + err;
   }
 }
+
 
 let unlisten;
 onMounted(async () => {
@@ -87,7 +94,7 @@ onBeforeUnmount(() => {
           :class="{ dragging: isDragging }"
           @click="selectInputFiles"
         >
-          <p v-if="inputPaths.length === 0">Drag & Drop CSV Files or Click to Select</p>
+          <p v-if="inputPaths.length === 0">Drag & Drop CSV/Excel Files or Click to Select</p>
           <ul v-else>
             <li v-for="path in inputPaths" :key="path">{{ path }}</li>
           </ul>
@@ -97,10 +104,20 @@ onBeforeUnmount(() => {
         <p>{{ outputPath }}</p>
 
         <input v-model="columnName" placeholder="Column name (e.g. CallNumber)" />
+
+        <!-- Output format switch -->
+        <div style="margin-top: 10px;">
+          <label>
+            <input type="radio" value="csv" v-model="outputFormat" /> CSV
+          </label>
+          <label style="margin-left: 10px;">
+            <input type="radio" value="xlsx" v-model="outputFormat" /> XLSX
+          </label>
+        </div>
       </div>
 
       <div class="submit-container">
-        <button id="submit" @click="sortFiles">Sort CSVs</button>
+        <button id="submit" @click="sortFiles">Sort Files</button>
         <p>{{ message }}</p>
       </div>
 
@@ -111,13 +128,11 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-
-
 <style>
 :root {
   --background: #121212;
   --surface: #1e1e1e;
-  --footer-bg: #1a1a1a; /* Slightly lighter or darker footer, tweak as needed */
+  --footer-bg: #1a1a1a;
   --text-primary: #e0e0e0;
   --text-secondary: #aaa;
   --highlight: #4bffb3;
@@ -157,11 +172,9 @@ html, body {
 
 .app-header {
   background-color: var(--msu-green);
-  padding: 2vh;
-  color: white;
-  width: 100%;
   padding: 1rem 0;
   text-align: center;
+  color: white;
 }
 
 .app-header h1 {
@@ -238,13 +251,11 @@ input {
 }
 
 .app-footer {
-  padding: 2vh;
+  padding: 1rem 0;
   text-align: center;
   font-size: 0.9rem;
   background-color: var(--footer-bg);
-  padding: 1rem 0;
-  text-align: center;
-  color: var(--text-color);
+  color: var(--text-primary);
 }
-
 </style>
+
