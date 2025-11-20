@@ -2,10 +2,11 @@ use std::env;
 use std::fs::File;
 use std::path::Path;
 use std::cmp::Ordering;
+use std::error::Error;
 
-use calamine::{open_workbook, Data, Error, Xlsx, Reader, RangeDeserializerBuilder};
+use calamine::{open_workbook, Data, Error as CalamineError, Xlsx, Reader, RangeDeserializerBuilder};
 use rust_xlsxwriter::{Workbook, XlsxError};
-use csv::{Writer};
+use csv::{Writer, Reader as CsvReader};
 use regex::Regex;
 
 #[derive(Debug, Clone)]
@@ -120,44 +121,75 @@ impl<'a> PartialEq for LocKey<'a> {
 impl<'a> Eq for LocKey<'a> {}
 
 // read different types into a common table type
-fn read_csv() {
-    // TODO: implement reading CSV
+fn read_csv(file: &str) -> Result<(Vec<Vec<Value>>, Vec<Value>), Box<dyn Error>> {
+    let file = File::open(file)?;
+    let mut rdr = CsvReader::from_reader(file);
+
+    let mut rows: Vec<Vec<Value>> = Vec::new();
+    let mut headers: Vec<Value> = Vec::new();
+
+    // Read headers
+    if let Some(result) = rdr.headers().ok() {
+        headers = result.iter().map(|s| Value::Text(s.to_string())).collect();
+    }
+
+    // Read records
+    for result in rdr.records() {
+        let record = result?;
+        let row: Vec<Value> = record.iter().map(|cell| {
+            // Try parsing each value as number or boolean first
+            if let Ok(n) = cell.parse::<i64>() {
+                Value::Int(n)
+            } else if let Ok(f) = cell.parse::<f64>() {
+                Value::Float(f)
+            } else if let Ok(b) = cell.parse::<bool>() {
+                Value::Bool(b)
+            } else if cell.is_empty() {
+                Value::Empty
+            } else {
+                Value::Text(cell.to_string())
+            }
+        }).collect();
+
+        rows.push(row);
+    }
+
+    Ok((rows, headers))
 }
 
-fn read_xlsx(file: &str) -> Result<(Vec<Vec<Value>>, Vec<Value>), Error> {
+fn read_xlsx(file: &str) -> Result<(Vec<Vec<Value>>, Vec<Value>), Box<dyn Error>> {
     let path = Path::new(file);
     let mut workbook: Xlsx<_> = open_workbook(path)?;
+
     let sheets = workbook.sheet_names().to_owned();
     let sheet_name = match sheets.first() {
         Some(name) => name.as_str(),
         None => {
             eprintln!("No sheets found in the workbook");
             return Ok((Vec::new(), Vec::new()));
-
         }
     };
-    let range = workbook.worksheet_range(sheet_name)?;
-    
+
+    let range = workbook.worksheet_range(sheet_name)?; // This returns calamine::Result<Range<Data>>
+
     let mut sheet: Vec<Vec<Value>> = Vec::new();
 
+    // Extract headers
     let headers: Vec<Value> = match range.rows().next() {
         Some(row) => row.iter().map(|cell| extract_value(cell)).collect(),
         None => Vec::new(),
     };
-    
-    for row in range.rows().skip(1) {
-        let row_values: Vec<Value> = row
-            .iter()
-            .map(|cell| extract_value(cell))
-            .collect();
 
+    // Extract data rows
+    for row in range.rows().skip(1) {
+        let row_values: Vec<Value> = row.iter().map(|cell| extract_value(cell)).collect();
         sheet.push(row_values);
     }
 
     Ok((sheet, headers))
 }
 
-fn sort_table(table: &mut Vec<Vec<Value>>, column: usize) -> Result<(), Error> {
+fn sort_table(table: &mut Vec<Vec<Value>>, column: usize) -> Result<(), Box<dyn Error>> {
     let row_count = table[0].len();
     let col_count = table.len();
 
@@ -284,61 +316,82 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 3 {
-        eprintln!("Not enough arguments provided, give a file and output destination");
+        eprintln!("Usage: {} <input_file> <output_file>", args[0]);
         std::process::exit(1);
     }
-    
+
     let input_file = &args[1];
-    let output_path = &args[2];
+    let output_file = &args[2];
 
     let ext = Path::new(input_file)
         .extension()
         .and_then(|ext| ext.to_str())
-        .unwrap_or("");
+        .unwrap_or("")
+        .to_lowercase();
 
-    if ext != "csv" && ext != "xlsx" {
-        eprintln!("Unsupported file type: expected .csv or .xlsx, got {}", input_file);
-        std::process::exit(1);
+    // Determine input file type
+    let result: Result<(Vec<Vec<Value>>, Vec<Value>), Box<dyn std::error::Error>> = match ext.as_str() {
+        "xlsx" => read_xlsx(input_file),
+        "csv" => read_csv(input_file),
+        _ => {
+            eprintln!("Unsupported file type: expected .csv or .xlsx, got {}", input_file);
+            std::process::exit(1);
+        }
+    };
+
+    // Handle reading errors
+    let (mut rows, headers) = match result {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!("Failed to read '{}': {}", input_file, e);
+            std::process::exit(1);
+        }
+    };
+
+    if rows.is_empty() {
+        println!("No data found in '{}'", input_file);
+        std::process::exit(0);
     }
 
-    if ext == "xlsx" {
-        match read_xlsx(input_file) {
-            Ok((mut rows, headers)) => {
-                if !rows.is_empty() {
-                    // Define a column index
-                    let sort_column_index = 12;
-                    let MAX_PRINT = rows.len().min(10);
+    // Example: sort by column 12 if it exists
+    let sort_column_index = 12;
+    if rows[0].len() > sort_column_index {
+        println!("Column before sorting:");
+        for row in rows.iter().take(10) {
+            println!("{:#?}", row[sort_column_index]);
+        }
 
-                    println!("Column:");
-
-                    // PRINT RAW COLUMN
-                    for row in &rows[0..MAX_PRINT] {
-                        println!("{:#?}", row[sort_column_index]);
-
-                    }
-                    
-                    println!("SORTING COLUMNS");
-
-                    sort_table(&mut rows, sort_column_index).unwrap();
-
-                    // PRINT SORTED COLUMN
-                    for row in &rows[0..MAX_PRINT] {
-                        println!("{:#?}", row[sort_column_index]);
-                    }
-
-                    if let Err(e) = output_xlsx(&rows, &headers, "output.xlsx") {
-                        eprintln!("Failed to write CSV: {}", e);
-                    } else {
-                        println!("CSV written successfully to {}", output_path);
-                    }
-                } else {
-                    println!("No data found in the first column.");
-                }
-            }
-            Err(e) => {
-                eprintln!("Error reading XLSX: {}", e);
-                std::process::exit(1);
+        if let Err(e) = sort_table(&mut rows, sort_column_index) {
+            eprintln!("Failed to sort table: {}", e);
+        } else {
+            println!("Column after sorting:");
+            for row in rows.iter().take(10) {
+                println!("{:#?}", row[sort_column_index]);
             }
         }
     }
+
+    // Determine output type by extension
+    let output_ext = Path::new(output_file)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let write_result = match output_ext.as_str() {
+        "xlsx" => output_xlsx(&rows, &headers, output_file),
+        "csv" => output_csv(&rows, &headers, output_file),
+        _ => {
+            eprintln!("Unsupported output file type: '{}'", output_file);
+            std::process::exit(1);
+        }
+    };
+
+    if let Err(e) = write_result {
+        eprintln!("Failed to write output '{}': {}", output_file, e);
+        std::process::exit(1);
+    } else {
+        println!("Output successfully written to '{}'", output_file);
+    }
 }
+
