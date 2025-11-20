@@ -227,46 +227,58 @@ fn output_xlsx(
     headers: &Vec<Value>,
     path: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Create a new workbook
     let mut workbook = Workbook::new();
     let worksheet = workbook.add_worksheet();
 
-    // Write headers
+    // Write headers as strings
     for (col_idx, header) in headers.iter().enumerate() {
         let value = match header {
+            Value::Text(s) => s.clone(),
             Value::Int(n) => n.to_string(),
             Value::Float(f) => f.to_string(),
             Value::Bool(b) => b.to_string(),
-            Value::Text(s) => s.clone(),
-            Value::DateTime(dt) => format!("{:?}", dt),
+            Value::DateTime(dt) => format!("{:?}", dt), // Or format as string
             Value::Empty => String::new(),
             Value::Error(e) => format!("{:?}", e),
         };
         worksheet.write_string(0, col_idx as u16, &value)?;
     }
 
-    // Write table rows
+    // Write table rows in appropriate type
     for (row_idx, row) in table.iter().enumerate() {
         for (col_idx, cell) in row.iter().enumerate() {
-            let value = match cell {
-                Value::Int(n) => n.to_string(),
-                Value::Float(f) => f.to_string(),
-                Value::Bool(b) => b.to_string(),
-                Value::Text(s) => s.clone(),
-                Value::DateTime(dt) => format!("{:?}", dt),
-                Value::Empty => String::new(),
-                Value::Error(e) => format!("{:?}", e),
-            };
-            // +1 for row_idx because headers occupy row 0
-            worksheet.write_string((row_idx + 1) as u32, col_idx as u16, &value)?;
+            match cell {
+                Value::Int(n) => {
+                    worksheet.write_number((row_idx + 1) as u32, col_idx as u16, *n as f64)?;
+                }
+                Value::Float(f) => {
+                    worksheet.write_number((row_idx + 1) as u32, col_idx as u16, *f)?;
+                }
+                Value::Bool(b) => {
+                    worksheet.write_boolean((row_idx + 1) as u32, col_idx as u16, *b)?;
+                }
+                Value::Text(s) => {
+                    worksheet.write_string((row_idx + 1) as u32, col_idx as u16, s)?;
+                }
+                Value::DateTime(dt) => {
+                    let dt_str = format!("{:?}", dt);
+                    worksheet.write_string((row_idx + 1) as u32, col_idx as u16, &dt_str)?;
+                }
+                Value::Empty => {
+                    // worksheet.write_blank((row_idx + 1) as u32, col_idx as u16)?;
+                }
+                Value::Error(e) => {
+                    let e_str = format!("{:?}", e);
+                    worksheet.write_string((row_idx + 1) as u32, col_idx as u16, &e_str)?;
+                }
+            }
         }
     }
 
-    // Save the workbook
     workbook.save(path)?;
-
     Ok(())
 }
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -294,7 +306,7 @@ fn main() {
             Ok((mut rows, headers)) => {
                 if !rows.is_empty() {
                     // Define a column index
-                    let sort_column_index = 3;
+                    let sort_column_index = 12;
                     let MAX_PRINT = rows.len().min(10);
 
                     println!("Column:");
