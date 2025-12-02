@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use regex::Regex;
@@ -8,14 +8,6 @@ use rust_xlsxwriter::Workbook;
 use csv::{Writer, Reader as CsvReader};
 use std::error::Error;
 use std::cmp::Ordering;
-
-#[derive(Deserialize)]
-pub struct SortArgs {
-    pub input_path: String,
-    pub column_name: String,
-    pub output_path: String,
-    pub output_format: String, // "csv" or "xlsx"
-}
 
 // Value enum for reading different types from Excel or CSV
 #[derive(Debug, Clone)]
@@ -187,6 +179,13 @@ fn read_xlsx(file: &str) -> Result<(Vec<Vec<Value>>, Vec<Value>), Box<dyn Error>
     Ok((sheet, headers))
 }
 
+fn show_table(table: Vec<Vec<Value>>, headers: Vec<Value>) -> Vec<Vec<Value>> {
+    let mut preview = Vec::new();
+    preview.push(headers);
+    preview.extend(table.into_iter().take(20)); // example: first 20 rows
+    return preview
+}
+
 // Sort the table by a given column
 fn sort_table(table: &mut Vec<Vec<Value>>, column: usize) -> Result<(), Box<dyn Error>> {
     let re = Regex::new(
@@ -280,19 +279,24 @@ fn output_xlsx(table: &Vec<Vec<Value>>, headers: &Vec<Value>, path: &str) -> Res
 }
 
 // Tauri command
-#[tauri::command]
-fn sort_file(args: SortArgs) -> Result<String, String> {
+#[tauri::command(rename_all = "snake_case")]
+fn sort_file(
+    input_path: String,
+    column_name: String,
+    output_path: String,
+    output_format: String
+) -> Result<String, String> {
     use std::path::Path;
 
-    let ext = Path::new(&args.input_path)
+    let ext = Path::new(&input_path)
         .extension()
         .and_then(|ext| ext.to_str())
         .unwrap_or("")
         .to_lowercase();
 
     let result = match ext.as_str() {
-        "csv" => read_csv(&args.input_path),
-        "xlsx" => read_xlsx(&args.input_path),
+        "csv" => read_csv(&input_path),
+        "xlsx" => read_xlsx(&input_path),
         _ => return Err(format!("Unsupported input file type: {}", ext)),
     };
 
@@ -304,16 +308,16 @@ fn sort_file(args: SortArgs) -> Result<String, String> {
 
     let column_index = headers.iter()
         .position(|v| match v {
-            Value::Text(s) => s == &args.column_name,
+            Value::Text(s) => s == &column_name,
             _ => false,
         })
-        .ok_or_else(|| format!("Column '{}' not found", args.column_name))?;
+        .ok_or_else(|| format!("Column '{}' not found", column_name))?;
 
     sort_table(&mut rows, column_index).map_err(|e| e.to_string())?;
 
-    let output_file_path = Path::new(&args.output_path);
+    let output_file_path = Path::new(&output_path);
 
-    match args.output_format.to_lowercase().as_str() {
+    match output_format.to_lowercase().as_str() {
         "csv" => output_csv(&rows, &headers, output_file_path.to_str().unwrap())
             .map_err(|e| e.to_string())?,
         "xlsx" => output_xlsx(&rows, &headers, output_file_path.to_str().unwrap())

@@ -43,12 +43,10 @@ async function sortFiles() {
       const outputFile = `${outputPath.value}/${fileName}_sorted.${outputFormat.value}`;
 
       await invoke("sort_file", {
-        args: {
           input_path: path,
           column_name: columnName.value,
           output_path: outputFile,
           output_format: outputFormat.value
-        }
       });
     }
     message.value = `Sorted ${inputPaths.value.length} file(s) successfully.`;
@@ -94,7 +92,7 @@ onBeforeUnmount(() => {
             @click="selectInputFiles"
           >
             <p v-if="inputPaths.length === 0" class="drop-zone-text">
-              📁 Drag & Drop Files or Click to Select
+              Drag & Drop Files or Click to Select
             </p>
             <div v-else class="file-list">
               <p class="file-count">{{ inputPaths.length }} file(s) selected</p>
@@ -109,7 +107,7 @@ onBeforeUnmount(() => {
           <div class="form-group">
             <label>Output Directory</label>
             <button @click="selectOutputFile" class="select-btn">
-              {{ outputPath ? '📂 Change Directory' : '📂 Choose Directory' }}
+              {{ outputPath ? 'Change Directory' : 'Choose Directory' }}
             </button>
             <p v-if="outputPath" class="path-display" :title="outputPath">
               {{ outputPath }}
