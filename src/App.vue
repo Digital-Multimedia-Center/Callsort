@@ -18,6 +18,10 @@ async function selectInputFiles() {
   });
   if (selected) {
     inputPaths.value = Array.isArray(selected) ? selected : [selected];
+    console.log("Files selected:", inputPaths.value);
+    await invoke("read_input", {
+      input_paths: inputPaths.value
+    });
   }
 }
 

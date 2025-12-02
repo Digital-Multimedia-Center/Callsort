@@ -1,13 +1,18 @@
-use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use regex::Regex;
+
+use std::sync::Mutex;
+use tauri::State;
 
 use calamine::{open_workbook, Data, Reader, Xlsx};
 use rust_xlsxwriter::Workbook;
 use csv::{Writer, Reader as CsvReader};
 use std::error::Error;
 use std::cmp::Ordering;
+
+// STATE FOR INPUTS
+struct InputPaths(Mutex<Vec<String>>);
 
 // Value enum for reading different types from Excel or CSV
 #[derive(Debug, Clone)]
@@ -328,12 +333,24 @@ fn sort_file(
     Ok(format!("File sorted and saved to: {}", output_file_path.display()))
 }
 
+#[tauri::command(rename_all = "snake_case")]
+fn read_input(input_paths: Vec<String>, state: State<InputPaths>) {
+    use std::path::Path;
+
+    // Lock the mutex to access current state
+    let mut stored_paths = state.0.lock().unwrap();
+
+    // Overwrite the state with the new input paths
+    *stored_paths = input_paths.clone();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![sort_file])
+        .manage(InputPaths(Mutex::new(Vec::new())))
+        .invoke_handler(tauri::generate_handler![sort_file,read_input])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
