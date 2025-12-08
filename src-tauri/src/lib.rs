@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use tauri::State;
 
 use calamine::{open_workbook, Data, Reader, Xlsx};
+use once_cell::sync::Lazy;
 use rust_xlsxwriter::Workbook;
 use csv::{Writer, Reader as CsvReader};
 use std::error::Error;
@@ -65,8 +66,8 @@ pub fn extract_value(data: &Data) -> Value {
 
 
 // Generate sorting key for LOC call numbers
-fn loc_sort_key<'a>(s: &'a str, re: &Regex) -> LocKey<'a> {
-    if let Some(caps) = re.captures(s) {
+fn loc_sort_key<'a>(s: &'a str) -> LocKey<'a> {
+    if let Some(caps) = LOC_RE.captures(s) {
         let g = |i| caps.get(i).map(|m| m.as_str()).unwrap_or("");
         LocKey {
             class_letters: g(1),
@@ -134,6 +135,12 @@ impl<'a> PartialEq for LocKey<'a> {
     }
 }
 
+static LOC_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"^\s*([A-Z]{1,3})([0-9]{1,4})\.?([0-9]{1,3})?\s*\.?([A-Z])([0-9]+)\s*(?:([A-Z]{1,2})([0-9]+)?)?\s*([0-9]{4})?(.*)?"
+    ).unwrap()
+});
+
 impl<'a> Eq for LocKey<'a> {}
 
 // Read CSV into Value table
@@ -194,30 +201,6 @@ fn read_xlsx(file: &str) -> Result<Table, Box<dyn Error>> {
     }
 
     Ok(Table{headers, rows: sheet})
-}
-
-// Sort the table by a given column
-fn sort_table(state: &StoredTables, column: usize) -> Result<(), Box<dyn Error>> {
-    let re = Regex::new(
-        r"^\s*([A-Z]{1,3})([0-9]{1,4})\.?([0-9]{1,3})?\s*\.?([A-Z])([0-9]+)\s*(?:([A-Z]{1,2})([0-9]+)?)?\s*([0-9]{4})?(.*)?"
-    )?;
-
-    let mut tables = state.0.lock().unwrap();
-
-    for table in tables.iter_mut() {
-        table.rows.sort_by(|a, b| {
-            let sa = match &a[column] {
-                Value::Text(s) => s.as_str(),
-                _ => "",
-            };
-            let sb = match &b[column] {
-                Value::Text(s) => s.as_str(),
-                _ => "",
-            };
-            loc_sort_key(sa, &re).cmp(&loc_sort_key(sb, &re))
-        });
-    }
-    Ok(()) 
 }
 
 // Write table to CSV
@@ -338,10 +321,6 @@ fn sort_file(
             return Err(format!("Column index {} is out of bounds for table {}", col, i));
         }
 
-        let re = Regex::new(
-            r"^\s*([A-Z]{1,3})([0-9]{1,4})\.?([0-9]{1,3})?\s*\.?([A-Z])([0-9]+)\s*(?:([A-Z]{1,2})([0-9]+)?)?\s*([0-9]{4})?(.*)?"
-        ).map_err(|e| e.to_string())?;
-
         table.rows.sort_by(|a, b| {
             let sa = match &a[col] {
                 Value::Text(s) => s.as_str(),
@@ -351,7 +330,7 @@ fn sort_file(
                 Value::Text(s) => s.as_str(),
                 _ => "",
             };
-            loc_sort_key(sa, &re).cmp(&loc_sort_key(sb, &re))
+            loc_sort_key(sa).cmp(&loc_sort_key(sb))
         });
     }
 
@@ -368,6 +347,7 @@ fn sort_file(
 
     Ok("All tables sorted and written successfully".to_string())
 }
+
 
 #[tauri::command(rename_all = "snake_case")]
 fn read_input(input_paths: Vec<String>, state: State<StoredTables>) -> Result<(), String> {
