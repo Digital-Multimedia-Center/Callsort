@@ -303,7 +303,7 @@ fn preview_tables(state: State<StoredTables>) -> Result<Vec<Table>, String> {
         .iter()
         .map(|table| Table {
             headers: table.headers.clone(),
-            rows: table.rows.iter().take(20).cloned().collect(),
+            rows: table.rows.iter().take(10).cloned().collect(),
         })
         .collect();
     Ok(previews)
