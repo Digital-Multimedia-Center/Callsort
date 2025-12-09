@@ -2,6 +2,8 @@
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from '@tauri-apps/plugin-dialog';
+import { basename, join } from "@tauri-apps/api/path";
+
 
 const inputPaths = ref([]);
 const outputPath = ref("");
@@ -89,10 +91,13 @@ async function sortFiles() {
 
   try {
     const columnIndices = tables.value.map(t => t.selectedColumn);
-    const outputPaths = tables.value.map(t => {
-      const filename = t.filename.split(".")[0];
-      return `${outputPath.value}/${filename}_sorted.${outputFormat.value}`;
-    });
+    const outputPaths = await Promise.all(
+      tables.value.map(async (t) => {
+        const nameOnly = await basename(t.filename); // e.g., "small_input.csv"
+        const filename = nameOnly.split(".")[0];     // "small_input"
+        return await join(outputPath.value, `${filename}_sorted.${outputFormat.value}`);
+      })
+    );
 
     const result = await invoke("sort_file", {
       column_indices: columnIndices,
